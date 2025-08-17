@@ -18,7 +18,7 @@ func UserInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 // Minimal discovery
 func DiscoveryHandler(w http.ResponseWriter, r *http.Request) {
-	base := "http://localhost:8080"
+	base := "http://localhost:9090"
 	resp := map[string]interface{}{
 		"issuer":                                base,
 		"authorization_endpoint":                base + "/authorize",

@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 )
 
@@ -9,19 +10,28 @@ import (
 var authCodes = map[string]string{} // code -> clientID
 
 func AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
-	// Very minimal: accept ?client_id=&redirect_uri=
-	clientID := r.URL.Query().Get("client_id")
-	redirectURI := r.URL.Query().Get("redirect_uri")
+	q := r.URL.Query()
+	clientID := q.Get("client_id")
+	redirectURI := q.Get("redirect_uri")
+	scope := q.Get("scope")
+	state := q.Get("state")
+
 	if clientID == "" || redirectURI == "" {
-		http.Error(w, "missing parameters", http.StatusBadRequest)
+		http.Error(w, "Missing client_id or redirect_uri", http.StatusBadRequest)
 		return
 	}
 
-	code := "authcode123" // demo code
-	authCodes[code] = clientID
-
-	// Redirect with code
-	http.Redirect(w, r, redirectURI+"?code="+code, http.StatusFound)
+	// Show login form
+	w.Header().Set("Content-Type", "text/html")
+	fmt.Fprintf(w, `<form method="POST" action="/login">
+        <input type="hidden" name="client_id" value="%s">
+        <input type="hidden" name="redirect_uri" value="%s">
+        <input type="hidden" name="scope" value="%s">
+        <input type="hidden" name="state" value="%s">
+        Username: <input name="username"><br>
+        Password: <input type="password" name="password"><br>
+        <button type="submit">Login</button>
+    </form>`, clientID, redirectURI, scope, state)
 }
 
 func TokenHandler(w http.ResponseWriter, r *http.Request) {
