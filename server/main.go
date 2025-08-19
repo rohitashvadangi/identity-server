@@ -12,8 +12,10 @@ import (
 
 func main() {
 	mux := http.NewServeMux()
-	loginHander := login.NewLoginHandler(stores.NewAuthCodeStore())
-
+	authCodeStore := stores.NewAuthCodeStore()
+	tokenStore := stores.NewTokenStore()
+	loginHandler := login.NewLoginHandler(authCodeStore)
+	oauthHandler := oauth.NewOauthHandler(authCodeStore, tokenStore)
 	// Health check
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -21,15 +23,16 @@ func main() {
 	})
 
 	// OAuth endpoints
-	mux.HandleFunc("/authorize", oauth.AuthorizeHandler)
-	mux.HandleFunc("/token", oauth.TokenHandler)
+	mux.HandleFunc("/authorize", oauthHandler.AuthorizeHandler)
+	mux.HandleFunc("/token", oauthHandler.TokenHandler)
+	mux.HandleFunc("/introspect", oauthHandler.IntrospectHandler)
+	mux.HandleFunc("/revoke", oauthHandler.RevokeHandler)
 
 	// OIDC endpoints
 	mux.HandleFunc("/userinfo", oidc.UserInfoHandler)
 	mux.HandleFunc("/.well-known/openid-configuration", oidc.DiscoveryHandler)
 	mux.HandleFunc("/.well-known/jwks.json", oidc.JWKSHandler)
-		mux.HandleFunc("/login", loginHander.LoginHandler)
-
+	mux.HandleFunc("/login", loginHandler.LoginHandler)
 
 	log.Println("Identity Server running on :9090")
 	log.Fatal(http.ListenAndServe(":9090", mux))

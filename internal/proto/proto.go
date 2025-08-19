@@ -15,9 +15,10 @@ type User struct {
 type Token struct {
 	TokenID      string
 	UserID       string
-	Scope        string // copied from AuthCode
+	Scope        []string
 	ExpiresAt    time.Time
 	RevocationID string // optional, for batch revocation
+	ClientID     string // optional, for batch revocation
 }
 
 type AuthCode struct {
@@ -27,4 +28,10 @@ type AuthCode struct {
 	ExpiresAt   time.Time
 	ClientID    string // which client requested it
 	RedirectURI string
+}
+
+type RefreshToken struct {
+	AccessToken Token
+	ID          string
+	ExpiresAt   time.Time
 }

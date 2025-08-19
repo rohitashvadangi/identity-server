@@ -9,8 +9,9 @@ import (
 )
 
 type InMemoryTokenStore struct {
-	tokens map[string]*proto.Token
-	mu     sync.RWMutex
+	tokens        map[string]*proto.Token
+	refreshTokens map[string]*proto.RefreshToken
+	mu            sync.RWMutex
 }
 
 // Ensure InMemoryTokenStore implements TokenStore
@@ -18,7 +19,7 @@ var _ TokenStore = (*InMemoryTokenStore)(nil)
 
 func NewTokenStore() *InMemoryTokenStore {
 	return &InMemoryTokenStore{
-		tokens: make(map[string]*proto.Token),
+		tokens: make(map[string]*proto.Token), refreshTokens: make(map[string]*proto.RefreshToken),
 	}
 }
 
@@ -26,6 +27,12 @@ func (s *InMemoryTokenStore) Save(token *proto.Token) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tokens[token.TokenID] = token
+}
+
+func (s *InMemoryTokenStore) SaveRefresh(refreshToken *proto.RefreshToken) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refreshTokens[refreshToken.ID] = refreshToken
 }
 
 func (s *InMemoryTokenStore) Get(tokenID string) (*proto.Token, error) {
@@ -42,4 +49,14 @@ func (s *InMemoryTokenStore) Delete(tokenID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.tokens, tokenID)
+}
+
+func (s *InMemoryTokenStore) GetByRefresh(refresh string) (*proto.RefreshToken, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.refreshTokens[refresh]
+	if !ok || time.Now().After(t.ExpiresAt) {
+		return nil, errors.New("refresh token not found or expired")
+	}
+	return t, nil
 }

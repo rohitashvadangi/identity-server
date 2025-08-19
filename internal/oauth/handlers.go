@@ -4,12 +4,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
+
+	"strings"
+
+	"github.com/google/uuid"
+	"github.com/rohitashvadangi/identity-server/internal/proto"
+	"github.com/rohitashvadangi/identity-server/internal/stores"
 )
 
 // In-memory storage (demo)
-var authCodes = map[string]string{} // code -> clientID
 
-func AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
+type OauthHandler struct {
+	authCodeStore stores.AuthCodeStore
+	tokenStore    stores.TokenStore
+}
+
+func (oauth OauthHandler) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	clientID := q.Get("client_id")
 	redirectURI := q.Get("redirect_uri")
@@ -34,29 +45,167 @@ func AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
     </form>`, clientID, redirectURI, scope, state)
 }
 
-func TokenHandler(w http.ResponseWriter, r *http.Request) {
+func (oauth OauthHandler) TokenHandler(w http.ResponseWriter, r *http.Request) {
 	grantType := r.FormValue("grant_type")
-	if grantType != "authorization_code" {
+
+	switch grantType {
+	case "authorization_code":
+		oauth.handleAuthCodeGrant(w, r)
+	case "refresh_token":
+		oauth.handleRefreshTokenGrant(w, r)
+	default:
 		http.Error(w, "unsupported grant_type", http.StatusBadRequest)
+	}
+}
+
+func (oauth OauthHandler) handleAuthCodeGrant(w http.ResponseWriter, r *http.Request) {
+
+	code := r.FormValue("code")
+	clientInReq := r.FormValue("client_id")
+	authCodeInfo, err := oauth.authCodeStore.Get(code)
+	requestedScope := r.FormValue("scope") // space-separated
+	if err != nil {
+		fmt.Printf("Failed to get code from store ", err)
+		http.Error(w, "invalid code!!!", http.StatusBadRequest)
 		return
 	}
 
-	code := r.FormValue("code")
-	clientID := authCodes[code]
-	if clientID == "" {
-		http.Error(w, "invalid code", http.StatusBadRequest)
+	if authCodeInfo == nil {
+		http.Error(w, "invalid code!!!", http.StatusBadRequest)
 		return
 	}
+
+	if authCodeInfo.ClientID != clientInReq {
+		fmt.Printf("Failed in client authCode %s and in request %s  ", authCodeInfo.ClientID, clientInReq)
+		http.Error(w, "invalid client", http.StatusBadRequest)
+		return
+	}
+
+	// Parse requested scopes and intersect with allowed scopes
+	allowedScopes := map[string]bool{"openid": true, "profile": true}
+	var scopes []string
+	for _, s := range strings.Fields(requestedScope) {
+		if allowedScopes[s] {
+			scopes = append(scopes, s)
+		}
+	}
+
+	oauth.authCodeStore.Delete(code)
+
+	tokenId := "atk-" + uuid.NewString()
+	refreshToken := "rtk-" + uuid.NewString()
 
 	// Issue dummy access & ID token
 	resp := map[string]interface{}{
-		"access_token":  "access123",
+		"access_token":  tokenId,
 		"token_type":    "Bearer",
 		"expires_in":    3600,
 		"id_token":      "idtoken123",
-		"refresh_token": "refresh123",
+		"refresh_token": refreshToken,
+	}
+
+	token := &proto.Token{ClientID: authCodeInfo.ClientID, TokenID: tokenId, UserID: authCodeInfo.UserID, Scope: scopes, ExpiresAt: time.Now().Add(30 * time.Minute), RevocationID: "revocation_" + tokenId}
+	oauth.tokenStore.Save(token)
+	//Refresh grant allowed
+	if true {
+		refreshToken := &proto.RefreshToken{ID: refreshToken, AccessToken: *token, ExpiresAt: time.Now().Add(100000 * time.Minute)}
+		oauth.tokenStore.SaveRefresh(refreshToken)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+func (oauth OauthHandler) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request) {
+	refresh := r.FormValue("refresh_token")
+	oldToken, err := oauth.tokenStore.GetByRefresh(refresh)
+	if err != nil {
+		http.Error(w, "invalid refresh token", http.StatusBadRequest)
+		return
+	}
+
+	
+	// Generate new access token (reuse refresh token or issue new one)
+	tokenId := "atk-" + uuid.NewString()
+	newToken := &proto.Token{
+		TokenID:      tokenId,
+		UserID:       oldToken.AccessToken.UserID,
+		ClientID:     oldToken.AccessToken.ClientID,
+		Scope:        oldToken.AccessToken.Scope,
+		ExpiresAt:    time.Now().Add(30 * time.Minute),
+		RevocationID: oldToken.AccessToken.RevocationID,
+	}
+
+	oauth.tokenStore.Save(newToken)
+
+	resp := map[string]interface{}{
+		"access_token":  tokenId,
+		"token_type":    "Bearer",
+		"expires_in":    3600,
+		"refresh_token": refresh,
+		"scope":         strings.Join(newToken.Scope, " "),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (oauth OauthHandler) IntrospectHandler(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	tokenStr := r.FormValue("token")
+	if tokenStr == "" {
+		http.Error(w, "missing token", http.StatusBadRequest)
+		return
+	}
+
+	t, err := oauth.tokenStore.Get(tokenStr)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]any{"active": false})
+		return
+	}
+
+	if time.Now().After(t.ExpiresAt) {
+		oauth.tokenStore.Delete(tokenStr)
+		json.NewEncoder(w).Encode(map[string]any{"active": false})
+		return
+	}
+
+	resp := map[string]any{
+		"active":    true,
+		"sub":       t.UserID,
+		"client_id": t.ClientID,
+		"scope":     strings.Join(t.Scope, " "),
+		"exp":       t.ExpiresAt.Unix(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (oauth OauthHandler) RevokeHandler(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	tokenStr := r.FormValue("token")
+
+	if tokenStr != "" {
+		oauth.tokenStore.Delete(tokenStr)
+	} else {
+		http.Error(w, "token or revocation_id required", http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func NewOauthHandler(authCodeStore stores.AuthCodeStore, tokenStore stores.TokenStore) *OauthHandler {
+	return &OauthHandler{
+		authCodeStore: authCodeStore, tokenStore: tokenStore,
+	}
 }

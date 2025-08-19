@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/rohitashvadangi/identity-server/internal/proto"
 	"github.com/rohitashvadangi/identity-server/internal/stores"
@@ -46,6 +47,8 @@ func (s *Login) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		ClientID:    clientID,
 		RedirectURI: redirectURI,
 		Scope:       scope,
+		Code:        code,
+		ExpiresAt:   time.Now().Add(10 * time.Minute),
 	}
 	s.authCodeStore.Save(ac)
 
