@@ -2,9 +2,14 @@ package oauth
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
+	"crypto/rsa"
+    "crypto/x509"
+    "encoding/pem"
+    "io/ioutil"
+	"fmt"
+    "github.com/golang-jwt/jwt/v5"
 
 	"strings"
 
@@ -18,6 +23,36 @@ import (
 type OauthHandler struct {
 	authCodeStore stores.AuthCodeStore
 	tokenStore    stores.TokenStore
+}
+
+var PrivateKey *rsa.PrivateKey
+var Issuer = "https://my-idp-server"
+
+func init() {
+    keyBytes, err := ioutil.ReadFile("../keys/private.pem")
+    if err != nil {
+         fmt.Println("Failed to read private key: %v", err)
+    }
+
+    block, _ := pem.Decode(keyBytes)
+    if block == nil {
+        fmt.Println("Failed to decode PEM block containing private key")
+    }
+
+
+   parsedKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+    if err != nil {
+        fmt.Println("Failed to parse PKCS#8 private key: %v", err)
+    }
+
+    var ok bool
+    PrivateKey, ok = parsedKey.(*rsa.PrivateKey)
+    if !ok {
+        fmt.Println("Private key is not RSA")
+    }
+
+
+    fmt.Println("Private key loaded successfully")
 }
 
 func (oauth OauthHandler) AuthorizeHandler(w http.ResponseWriter, r *http.Request) {
@@ -174,14 +209,29 @@ func (oauth OauthHandler) IntrospectHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	resp := map[string]any{
+	/**resp := map[string]any{
 		"active":    true,
 		"sub":       t.UserID,
 		"client_id": t.ClientID,
 		"scope":     strings.Join(t.Scope, " "),
 		"exp":       t.ExpiresAt.Unix(),
 	}
+*/
+	 claims := jwt.MapClaims{
+        "sub": t.UserID,
+        "exp": time.Now().Add(time.Hour * 1).Unix(), // 1 hour expiry
+        "iat": time.Now().Unix(),
+        "iss": Issuer,
+		"client_id": t.ClientID,
+		"scope":     strings.Join(t.Scope, " "),
+		"active" : true,
+    }
 
+	resp,err:=oauth.generateJWT(PrivateKey,claims)
+	if err!=nil {
+		json.NewEncoder(w).Encode(err)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
@@ -208,4 +258,11 @@ func NewOauthHandler(authCodeStore stores.AuthCodeStore, tokenStore stores.Token
 	return &OauthHandler{
 		authCodeStore: authCodeStore, tokenStore: tokenStore,
 	}
+}
+
+// GenerateJWT signs a token with RSA private key
+func (oauth OauthHandler) generateJWT(privateKey *rsa.PrivateKey, claims jwt.MapClaims) (string, error) {
+
+    token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+    return token.SignedString(privateKey)
 }

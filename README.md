@@ -86,3 +86,10 @@ flowchart LR
   Keys --> AWSKMS
   Auth --> OIDC
   Auth --> SAML
+
+
+⚠️ Security Note:
+Private key is committed for demo purposes only.
+In a real-world setup, private keys must be stored in a secure vault
+(AWS KMS, Azure Key Vault, GCP KMS, or HashiCorp Vault).
+

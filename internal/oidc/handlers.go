@@ -25,19 +25,11 @@ func DiscoveryHandler(w http.ResponseWriter, r *http.Request) {
 		"token_endpoint":                        base + "/token",
 		"userinfo_endpoint":                     base + "/userinfo",
 		"jwks_uri":                              base + "/.well-known/jwks.json",
+		"revocation_endpoint":                   base + "/revoke",
 		"response_types_supported":              []string{"code"},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"RS256"},
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
-}
-
-// Minimal JWKS
-func JWKSHandler(w http.ResponseWriter, r *http.Request) {
-	jwks := map[string]interface{}{
-		"keys": []interface{}{}, // placeholder
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(jwks)
 }

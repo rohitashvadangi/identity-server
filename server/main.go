@@ -16,6 +16,7 @@ func main() {
 	tokenStore := stores.NewTokenStore()
 	loginHandler := login.NewLoginHandler(authCodeStore)
 	oauthHandler := oauth.NewOauthHandler(authCodeStore, tokenStore)
+	oidc.InitJWKS("../keys/public.pem")
 	// Health check
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
