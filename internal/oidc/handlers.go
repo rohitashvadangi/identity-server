@@ -5,17 +5,6 @@ import (
 	"net/http"
 )
 
-// Minimal UserInfo
-func UserInfoHandler(w http.ResponseWriter, r *http.Request) {
-	user := map[string]interface{}{
-		"sub":   "user123",
-		"name":  "John Doe",
-		"email": "john@example.com",
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
-}
-
 // Minimal discovery
 func DiscoveryHandler(w http.ResponseWriter, r *http.Request) {
 	base := "http://localhost:9090"

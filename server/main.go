@@ -5,17 +5,23 @@ import (
 	"net/http"
 
 	"github.com/rohitashvadangi/identity-server/internal/login"
+	"github.com/rohitashvadangi/identity-server/internal/middleware"
 	"github.com/rohitashvadangi/identity-server/internal/oauth"
 	"github.com/rohitashvadangi/identity-server/internal/oidc"
 	"github.com/rohitashvadangi/identity-server/internal/stores"
+	"github.com/rohitashvadangi/identity-server/internal/utils"
 )
 
 func main() {
 	mux := http.NewServeMux()
+	userStore := stores.NewUserStore(utils.CreateUsers())
+
 	authCodeStore := stores.NewAuthCodeStore()
 	tokenStore := stores.NewTokenStore()
-	loginHandler := login.NewLoginHandler(authCodeStore)
+	loginHandler := login.NewLoginHandler(authCodeStore, userStore)
 	oauthHandler := oauth.NewOauthHandler(authCodeStore, tokenStore)
+
+	userHandler := oidc.NewUserHandler(userStore)
 	oidc.InitJWKS("../keys/public.pem")
 	// Health check
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +36,14 @@ func main() {
 	mux.HandleFunc("/revoke", oauthHandler.RevokeHandler)
 
 	// OIDC endpoints
-	mux.HandleFunc("/userinfo", oidc.UserInfoHandler)
+	var validator stores.TokenValidator = tokenStore
+
+	mux.Handle("/userinfo",
+		middleware.AuthMiddleware(validator)(
+			http.HandlerFunc(userHandler.UserInfoHandler),
+		),
+	)
+
 	mux.HandleFunc("/.well-known/openid-configuration", oidc.DiscoveryHandler)
 	mux.HandleFunc("/.well-known/jwks.json", oidc.JWKSHandler)
 	mux.HandleFunc("/login", loginHandler.LoginHandler)

@@ -60,3 +60,20 @@ func (s *InMemoryTokenStore) GetByRefresh(refresh string) (*proto.RefreshToken, 
 	}
 	return t, nil
 }
+
+// GenerateJWT signs a token with RSA private key
+func (s *InMemoryTokenStore) ValidateOpaqueToken(token string) (*proto.Token, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.tokens[token]
+	if !ok {
+		return nil, false
+	}
+
+	if time.Now().After(t.ExpiresAt) {
+		delete(s.tokens, token)
+
+		return nil, false
+	}
+	return t, true
+}

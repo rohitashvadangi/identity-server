@@ -13,6 +13,7 @@ import (
 
 type Login struct {
 	authCodeStore stores.AuthCodeStore
+	userStore     stores.UserStore
 }
 
 // ----- Users -----
@@ -35,7 +36,7 @@ func (s *Login) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	scope := r.FormValue("scope")
 	state := r.FormValue("state")
 
-	if pwd, ok := users[username]; !ok || pwd != password {
+	if _, ok := s.userStore.ValidateCredentials(username, password); !ok {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
@@ -60,8 +61,9 @@ func (s *Login) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
-func NewLoginHandler(authCodeStore stores.AuthCodeStore) *Login {
+func NewLoginHandler(authCodeStore stores.AuthCodeStore, userStore stores.UserStore) *Login {
 	return &Login{
 		authCodeStore: authCodeStore,
+		userStore:     userStore,
 	}
 }
