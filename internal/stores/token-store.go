@@ -17,8 +17,6 @@ type TokenStore interface {
 	Delete(token string)
 
 	GetByRefresh(refresh string) (*proto.RefreshToken, error)
-
-	ValidateOpaqueToken(token string) (*proto.Token, bool)
 }
 
 type TokenValidator interface {

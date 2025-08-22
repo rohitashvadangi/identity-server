@@ -46,8 +46,18 @@ func main() {
 
 	mux.HandleFunc("/.well-known/openid-configuration", oidc.DiscoveryHandler)
 	mux.HandleFunc("/.well-known/jwks.json", oidc.JWKSHandler)
+
+	//login demo
 	mux.HandleFunc("/login", loginHandler.LoginHandler)
 
 	log.Println("Identity Server running on :9090")
-	log.Fatal(http.ListenAndServe(":9090", mux))
+	srv := &http.Server{
+		Addr:    ":9090",
+		Handler: mux,
+	}
+
+	log.Println("Identity Server running on :9090")
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("server failed: %v", err)
+	}
 }
